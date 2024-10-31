@@ -1,0 +1,21 @@
+version: '3.5'
+
+services:
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - REDIS=redis:6379
+      - RATE_LIMIT_TYPE=IP
+      - IP_RATE_LIMIT=100
+      - TOKEN_RATE_LIMIT=150
+      - BLOCK_DURATION=3
+    ports:
+      - "8080:8080"
