@@ -21,7 +21,7 @@ func RateLimiterMiddleware(rateLimiter *rl.RateLimiter, next http.Handler) http.
 		token := r.Header.Get("API_KEY")
 
 		var key string
-		var limit int
+		var limit int64
 
 		if strings.ToUpper(rateLimiter.RateLimitType) == "IP" {
 			key = "ip:" + ip

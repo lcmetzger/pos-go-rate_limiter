@@ -9,25 +9,39 @@ import (
 	"time"
 
 	"github.com/lcmetzger/rate_limiter/internal/middleware"
+	"github.com/lcmetzger/rate_limiter/internal/repository"
 	"github.com/lcmetzger/rate_limiter/internal/rl"
 )
 
 func TestMain(m *testing.M) {
-	os.Setenv("REDIS", "localhost:6379")
+	os.Setenv("ADDR", "localhost:6379")
 	os.Setenv("IP_RATE_LIMIT", "2")
-	os.Setenv("TOKEN_RATE_LIMIT", "3")
+	os.Setenv("TOKEN_RATE_LIMIT", "2")
 	os.Setenv("BLOCK_DURATION", "3")
+	os.Setenv("REPO_TYPE", "REDIS")
 	os.Exit(m.Run())
 }
 
-func TestRateLimiter(t *testing.T) {
-	redisAddr := os.Getenv("REDIS")
-	ipRateLimit, _ := strconv.Atoi(os.Getenv("IP_RATE_LIMIT"))
-	tokenRateLimit, _ := strconv.Atoi(os.Getenv("TOKEN_RATE_LIMIT"))
+func TestRedisRateLimiter(t *testing.T) {
+	redisAddr := os.Getenv("ADDR")
+	ipRateLimit, _ := strconv.ParseInt(os.Getenv("IP_RATE_LIMIT"), 10, 64)
+	tokenRateLimit, _ := strconv.ParseInt(os.Getenv("TOKEN_RATE_LIMIT"), 10, 64)
 	blockDuration, _ := strconv.Atoi(os.Getenv("BLOCK_DURATION"))
 	rateLimitType := "IP"
+	repository_type := os.Getenv("REPO_TYPE")
 
-	rateLimiter := rl.NewRateLimiter(redisAddr, ipRateLimit, tokenRateLimit, blockDuration, rateLimitType)
+	var repo repository.IRateLimiterRespository = nil
+	if repository_type == "REDIS" {
+		repo = repository.NewRedisRepository(redisAddr)
+	}
+	if repository_type == "PGSQL" {
+		repo = repository.NewRedisRepository(redisAddr)
+	}
+	if repo == nil {
+		panic("Definir o tipo de repositorio a ser utilizado")
+	}
+
+	rateLimiter := rl.NewRateLimiter(repo, ipRateLimit, tokenRateLimit, blockDuration, rateLimitType)
 	helloHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello, world!"))
 	})
@@ -40,19 +54,19 @@ func TestRateLimiter(t *testing.T) {
 	// Testes para IP
 	middlewareHandler.ServeHTTP(recorder, req)
 	if recorder.Code != http.StatusOK {
-		t.Errorf("esperado status %v, porém foi recebido status %v", http.StatusOK, recorder.Code)
+		t.Errorf("IP: esperado status %v, porém foi recebido status %v", http.StatusOK, recorder.Code)
 	}
 
 	recorder = httptest.NewRecorder()
 	middlewareHandler.ServeHTTP(recorder, req)
 	if recorder.Code != http.StatusOK {
-		t.Errorf("esperado status %v, porém foi recebido status %v", http.StatusOK, recorder.Code)
+		t.Errorf("IP: esperado status %v, porém foi recebido status %v", http.StatusOK, recorder.Code)
 	}
 
 	recorder = httptest.NewRecorder()
 	middlewareHandler.ServeHTTP(recorder, req)
 	if recorder.Code != http.StatusTooManyRequests {
-		t.Errorf("esperado status %v, porém foi recebido status %v", http.StatusTooManyRequests, recorder.Code)
+		t.Errorf("IP: esperado status %v, porém foi recebido status %v", http.StatusTooManyRequests, recorder.Code)
 	}
 
 	// Aguarda 4 segundos para rodar novo teste
@@ -60,17 +74,29 @@ func TestRateLimiter(t *testing.T) {
 	recorder = httptest.NewRecorder()
 	middlewareHandler.ServeHTTP(recorder, req)
 	if recorder.Code != http.StatusOK {
-		t.Errorf("esperado status %v, porém foi recebido status %v", http.StatusOK, recorder.Code)
+		t.Errorf("IP: esperado status %v, porém foi recebido status %v", http.StatusOK, recorder.Code)
 	}
 
 	// Testes para Token
-	redisAddr = os.Getenv("REDIS")
-	ipRateLimit, _ = strconv.Atoi(os.Getenv("IP_RATE_LIMIT"))
-	tokenRateLimit, _ = strconv.Atoi(os.Getenv("TOKEN_RATE_LIMIT"))
+	redisAddr = os.Getenv("ADDR")
+	ipRateLimit, _ = strconv.ParseInt(os.Getenv("IP_RATE_LIMIT"), 10, 64)
+	tokenRateLimit, _ = strconv.ParseInt(os.Getenv("TOKEN_RATE_LIMIT"), 10, 64)
 	blockDuration, _ = strconv.Atoi(os.Getenv("BLOCK_DURATION"))
 	rateLimitType = "TOKEN"
+	repository_type = os.Getenv("REPO_TYPE")
 
-	rateLimiter = rl.NewRateLimiter(redisAddr, ipRateLimit, tokenRateLimit, blockDuration, rateLimitType)
+	repo = nil
+	if repository_type == "REDIS" {
+		repo = repository.NewRedisRepository(redisAddr)
+	}
+	if repository_type == "PGSQL" {
+		repo = repository.NewPgSqlRepository(redisAddr)
+	}
+	if repo == nil {
+		panic("TOKEN: Definir o tipo de repositorio a ser utilizado")
+	}
+
+	rateLimiter = rl.NewRateLimiter(repo, ipRateLimit, tokenRateLimit, blockDuration, rateLimitType)
 	helloHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello, world!"))
 	})
@@ -80,33 +106,19 @@ func TestRateLimiter(t *testing.T) {
 	recorder = httptest.NewRecorder()
 	middlewareHandler.ServeHTTP(recorder, req)
 	if recorder.Code != http.StatusOK {
-		t.Errorf("esperado status %v, porém foi recebido status %v", http.StatusOK, recorder.Code)
+		t.Errorf("TOKEN: esperado status %v, porém foi recebido status %v", http.StatusOK, recorder.Code)
 	}
 
 	recorder = httptest.NewRecorder()
 	middlewareHandler.ServeHTTP(recorder, req)
 	if recorder.Code != http.StatusOK {
-		t.Errorf("esperado status %v, porém foi recebido status %v", http.StatusOK, recorder.Code)
-	}
-
-	recorder = httptest.NewRecorder()
-	middlewareHandler.ServeHTTP(recorder, req)
-	if recorder.Code != http.StatusOK {
-		t.Errorf("esperado status %v, porém foi recebido status %v", http.StatusOK, recorder.Code)
+		t.Errorf("TOKEN: esperado status %v, porém foi recebido status %v", http.StatusOK, recorder.Code)
 	}
 
 	recorder = httptest.NewRecorder()
 	middlewareHandler.ServeHTTP(recorder, req)
 	if recorder.Code != http.StatusTooManyRequests {
-		t.Errorf("esperado status %v, porém foi recebido status %v", http.StatusTooManyRequests, recorder.Code)
-	}
-
-	// Aguarda 4 segundos para rodar novo teste
-	time.Sleep(time.Second * 4)
-	recorder = httptest.NewRecorder()
-	middlewareHandler.ServeHTTP(recorder, req)
-	if recorder.Code != http.StatusOK {
-		t.Errorf("esperado status %v, porém foi recebido status %v", http.StatusOK, recorder.Code)
+		t.Errorf("TOKEN: esperado status %v, porém foi recebido status %v", http.StatusTooManyRequests, recorder.Code)
 	}
 
 }

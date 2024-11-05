@@ -1,21 +1,36 @@
-version: '3.5'
+version: '3.8'
 
 services:
+
+  postgres:
+    image: postgres:latest
+    environment:
+      POSTGRES_USER: ratelimit_user
+      POSTGRES_PASSWORD: ratelimit_pass
+    ports:
+      - "5454:5432"
 
   redis:
     image: redis:alpine
     ports:
       - "6379:6379"
-
+  
   app:
     build:
       context: .
       dockerfile: Dockerfile
     environment:
-      - REDIS=redis:6379
+      - REPO_TYPE=PGSQL
+      - ADDR=postgresql://ratelimit_user:ratelimit_pass@postgres:5432/postgres?sslmode=disable
+      # - REPO_TYPE=REDIS
+      # - ADDR=redis:6379
       - RATE_LIMIT_TYPE=IP
+      # - RATE_LIMIT_TYPE=TOKEN
       - IP_RATE_LIMIT=100
-      - TOKEN_RATE_LIMIT=150
+      - TOKEN_RATE_LIMIT=100
       - BLOCK_DURATION=3
     ports:
       - "8080:8080"
+    depends_on:
+      - postgres
+      - redis

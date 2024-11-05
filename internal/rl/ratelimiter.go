@@ -2,29 +2,29 @@ package rl
 
 import (
 	"context"
+	"log"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/redis/go-redis/v9"
+	"github.com/lcmetzger/rate_limiter/internal/repository"
 )
 
 type RateLimiter struct {
-	RedisClient    *redis.Client
-	IpRateLimit    int
-	TokenRateLimit int
+	repo           repository.IRateLimiterRespository
+	IpRateLimit    int64
+	TokenRateLimit int64
 	BlockDuration  int
 	RateLimitType  string
 }
 
-func NewRateLimiter(redisAddr string, ipRateLimit, tokenRateLimit int, blockDuration int, rateLimitType string) *RateLimiter {
+func NewRateLimiter(repository repository.IRateLimiterRespository, ipRateLimit, tokenRateLimit int64, blockDuration int, rateLimitType string) *RateLimiter {
 	if strings.ToUpper(rateLimitType) != "IP" && strings.ToUpper(rateLimitType) != "TOKEN" {
-		panic("Tipo de rate limiter deve ser definido")
+		panic("O tipo de rate limiter deve ser definido através da variável de ambiente RATE_LIMIT_TYPE")
 	}
 
 	return &RateLimiter{
-		RedisClient: redis.NewClient(&redis.Options{
-			Addr: redisAddr,
-		}),
+		repo:           repository,
 		IpRateLimit:    ipRateLimit,
 		TokenRateLimit: tokenRateLimit,
 		BlockDuration:  blockDuration,
@@ -32,23 +32,44 @@ func NewRateLimiter(redisAddr string, ipRateLimit, tokenRateLimit int, blockDura
 	}
 }
 
-func (rl *RateLimiter) Allow(key string, limit int) bool {
+func (rl *RateLimiter) Allow(key string, limit int64) bool {
 	ctx := context.Background()
+	var count int64 = 1
 
-	// Incrementa o contador de requisições
-	count, err := rl.RedisClient.Incr(ctx, key).Result()
+	res, err := rl.repo.Find(ctx, key)
 	if err != nil {
 		return false
 	}
-
-	// Define o tempo de expiração do contador
-	if count == 1 {
-		rl.RedisClient.Expire(ctx, key, time.Duration(rl.BlockDuration)*time.Second)
+	if res == "" {
+		rl.repo.Save(ctx, key, strconv.FormatInt(count, 10))
+	} else {
+		count, err = strconv.ParseInt(res, 10, 64)
+		if err != nil {
+			panic("erro de conversão")
+		}
+		count++
+		rl.repo.Update(ctx, key, strconv.FormatInt(count, 10))
 	}
 
-	// Verifica se o limite foi excedido
-	if int(count) > limit {
-		rl.RedisClient.Set(ctx, key+":blocked", "true", time.Duration(rl.BlockDuration)*time.Second)
+	if count == 1 {
+		go func(k string) {
+			time.Sleep(time.Duration(rl.BlockDuration) * time.Second)
+			rl.repo.Delete(ctx, k)
+		}(key)
+	}
+
+	if count > limit {
+		res, err := rl.repo.Find(ctx, key+":blocked")
+		if err != nil {
+			log.Println(err)
+		}
+		if res != "true" {
+			rl.repo.Save(ctx, key+":blocked", "true")
+			go func(k string) {
+				time.Sleep(time.Duration(rl.BlockDuration) * time.Second)
+				rl.repo.Delete(ctx, k)
+			}(key + ":blocked")
+		}
 		return false
 	}
 	return true
@@ -56,10 +77,9 @@ func (rl *RateLimiter) Allow(key string, limit int) bool {
 
 func (rl *RateLimiter) IsBlocked(key string) bool {
 	ctx := context.Background()
-	blocked, err := rl.RedisClient.Get(ctx, key+":blocked").Result()
-	if err == redis.Nil {
+	blocked, err := rl.repo.Find(ctx, key+":blocked")
+	if err == nil {
 		return false
 	}
 	return blocked == "true"
-
 }

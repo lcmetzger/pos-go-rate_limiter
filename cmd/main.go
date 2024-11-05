@@ -7,24 +7,37 @@ import (
 	"strconv"
 
 	"github.com/lcmetzger/rate_limiter/internal/middleware"
+	"github.com/lcmetzger/rate_limiter/internal/repository"
 	"github.com/lcmetzger/rate_limiter/internal/rl"
 )
 
 func main() {
 	// Carregar variáveis de ambiente
-	redisAddr := os.Getenv("REDIS")
-	ipRateLimit, _ := strconv.Atoi(os.Getenv("IP_RATE_LIMIT"))
-	tokenRateLimit, _ := strconv.Atoi(os.Getenv("TOKEN_RATE_LIMIT"))
+	addr := os.Getenv("ADDR")
+	ipRateLimit, _ := strconv.ParseInt(os.Getenv("IP_RATE_LIMIT"), 10, 64)
+	tokenRateLimit, _ := strconv.ParseInt(os.Getenv("TOKEN_RATE_LIMIT"), 10, 64)
 	blockDuration, _ := strconv.Atoi(os.Getenv("BLOCK_DURATION"))
 	rateLimitType := os.Getenv("RATE_LIMIT_TYPE")
+	repositoryType := os.Getenv("REPO_TYPE")
 
-	rateLimiter := rl.NewRateLimiter(redisAddr, ipRateLimit, tokenRateLimit, blockDuration, rateLimitType)
+	var repo repository.IRateLimiterRespository = nil
+	if repositoryType == "REDIS" {
+		repo = repository.NewRedisRepository(addr)
+	}
+	if repositoryType == "PGSQL" {
+		repo = repository.NewPgSqlRepository(addr)
+	}
+	if repo == nil {
+		panic("Definir o tipo de repositorio a ser utilizado")
+	}
+
+	rateLimiter := rl.NewRateLimiter(repo, ipRateLimit, tokenRateLimit, blockDuration, rateLimitType)
 
 	log.Printf("IpRateLimit: %v", ipRateLimit)
 	log.Printf("TokenRateLimit: %v", tokenRateLimit)
 	log.Printf("BlockDuration: %v", blockDuration)
 	log.Printf("RateLimitType: %v", rateLimitType)
-	log.Printf("RedisAddr: %v", redisAddr)
+	log.Printf("RedisAddr: %v", addr)
 
 	log.Println("Server is running...")
 
