@@ -20,10 +20,10 @@ services:
       context: .
       dockerfile: Dockerfile
     environment:
-      - REPO_TYPE=PGSQL
-      - ADDR=postgresql://ratelimit_user:ratelimit_pass@postgres:5432/postgres?sslmode=disable
-      # - REPO_TYPE=REDIS
-      # - ADDR=redis:6379
+      # - REPO_TYPE=PGSQL
+      # - ADDR=postgresql://ratelimit_user:ratelimit_pass@postgres:5432/postgres?sslmode=disable
+      - REPO_TYPE=REDIS
+      - ADDR=redis:6379
       - RATE_LIMIT_TYPE=IP
       # - RATE_LIMIT_TYPE=TOKEN
       - IP_RATE_LIMIT=100
